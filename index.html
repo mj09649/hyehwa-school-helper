@@ -585,11 +585,14 @@
     padding:26px 24px; display:flex; flex-direction:column; gap:6px;
   }
   .login-box label{ font-size:12.5px; color:var(--ink-soft); font-weight:600; margin-top:8px; }
-  .login-box input{
+  .login-box input, .login-box select{
     font-family:inherit; font-size:14px; color:var(--ink);
     background:var(--paper-2); border:1px solid var(--line);
     border-radius:10px; padding:10px 12px;
   }
+  .login-box .form-row.inline{ gap:10px; margin-top:8px; }
+  .login-box .form-row.inline > div{ flex:1; display:flex; flex-direction:column; gap:4px; }
+  .login-box .form-row.inline label{ margin-top:0; }
   .login-submit{
     margin-top:16px; border:none; background:var(--pine); color:var(--paper);
     font-family:inherit; font-weight:700; font-size:14px; padding:11px; border-radius:10px; cursor:pointer;
@@ -1031,14 +1034,43 @@
         <!-- 로그인 -->
         <section id="login" class="view active">
           <h2 class="page-title">🔑 로그인</h2>
-          <form class="login-box" onsubmit="event.preventDefault(); attemptLogin();">
-            <label for="loginId">아이디</label>
-            <input id="loginId" type="text" placeholder="아이디" autocomplete="username" aria-describedby="loginError" maxlength="50" />
+          <form class="login-box" id="loginForm" onsubmit="event.preventDefault(); attemptLogin();">
+            <label for="loginEmail">이메일</label>
+            <input id="loginEmail" type="email" placeholder="you@example.com" autocomplete="username" aria-describedby="loginError" maxlength="100" />
             <label for="loginPw">비밀번호</label>
             <input id="loginPw" type="password" placeholder="비밀번호" autocomplete="current-password" aria-describedby="loginError" maxlength="100" />
             <button type="submit" class="login-submit" id="loginSubmitBtn">로그인</button>
-            <p class="login-hint">데모 학생 계정: student1 / 1234<br>데모 교사 계정: teacher / 1234</p>
+            <p class="login-hint">계정이 없으신가요? <button type="button" class="tmc-change-link" onclick="showAuthForm('signup')">회원가입</button></p>
             <p id="loginError" class="login-error" role="alert" aria-live="assertive"></p>
+          </form>
+
+          <form class="login-box" id="signupForm" style="display:none;" onsubmit="event.preventDefault(); attemptSignup();">
+            <label for="signupName">이름</label>
+            <input id="signupName" type="text" placeholder="이름" maxlength="30" />
+            <label for="signupEmail">이메일</label>
+            <input id="signupEmail" type="email" placeholder="you@example.com" autocomplete="username" maxlength="100" />
+            <label for="signupPw">비밀번호 (6자 이상)</label>
+            <input id="signupPw" type="password" placeholder="비밀번호" autocomplete="new-password" maxlength="100" />
+            <label for="signupRole">구분</label>
+            <select id="signupRole" onchange="onSignupRoleChange()">
+              <option value="student">학생</option>
+              <option value="teacher">교사</option>
+            </select>
+            <div id="signupStudentFields" class="form-row inline" style="margin-top:8px;">
+              <div><label for="signupGrade">학년</label><select id="signupGrade">
+                <option value="1">1학년</option><option value="2">2학년</option><option value="3">3학년</option>
+              </select></div>
+              <div><label for="signupCls">반</label><select id="signupCls">
+                <option value="1">1반</option><option value="2">2반</option><option value="3">3반</option><option value="4">4반</option>
+              </select></div>
+            </div>
+            <div id="signupTeacherFields" style="display:none;">
+              <label for="signupTeacherCode">교사 초대 코드</label>
+              <input id="signupTeacherCode" type="text" placeholder="교사 초대 코드" maxlength="50" />
+            </div>
+            <button type="submit" class="login-submit" id="signupSubmitBtn">회원가입</button>
+            <p class="login-hint">이미 계정이 있으신가요? <button type="button" class="tmc-change-link" onclick="showAuthForm('login')">로그인</button></p>
+            <p id="signupError" class="login-error" role="alert" aria-live="assertive"></p>
           </form>
         </section>
 
@@ -1062,6 +1094,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
   var BASE_MENU = [
     {id:'home', icon:'🏠', label:'홈'},
@@ -1124,39 +1157,159 @@
   }
 
   /* =========================================================
-     계정 / 인증
+     Supabase 연동 설정
      ---------------------------------------------------------
-     비밀번호는 절대 평문으로 저장하지 않는다. 아래 USERS는
-     "salt + SHA-256 해시"만 보관한다 (passwordHash = sha256(salt+":"+password)).
-     로그인 시에도 입력한 비밀번호를 그 자리에서 같은 방식으로 해시한 뒤
-     해시값끼리만 비교하고, 평문 비밀번호는 어디에도 저장/전송하지 않는다.
-
-     ⚠️ 실제 서비스라면:
-     - 이 비교/해시 과정은 반드시 서버에서 수행하고 (bcrypt/argon2 권장, salt는 알고리즘이 자동 관리)
-     - 클라이언트는 로그인 성공 후 세션 토큰만 받아 저장해야 한다.
-     - 여기서는 별도 백엔드가 없는 프런트엔드 프로토타입이므로,
-       "평문 저장 금지" 원칙을 보여주기 위해 동일한 원리를 클라이언트에서 시연한다.
+     공지사항/수행평가/FAQ/즐겨찾기/회원 프로필을 저장하는 실제
+     데이터베이스. 여기 쓰는 키는 "anon public"(퍼블리셔블) 키로,
+     클라이언트에 공개돼도 안전하도록 설계된 키다 (실제 접근 제어는
+     Supabase의 Row Level Security 정책이 담당한다). 절대 secret/
+     service_role 키를 여기에 넣으면 안 된다 — 그 키는 보안 규칙을
+     모두 무시하는 관리자 키라서 클라이언트에 노출되면 안 된다.
      ========================================================= */
-  var USERS = [
-    { username:'student1', salt:'saltA1', passwordHash:'5b52faefae246570cbf670661f3b8aa544a515f14405b70bf13a8b40460db2f1',
-      role:'student', name:'김민준', grade:1, cls:1 },
-    { username:'teacher', salt:'saltB7', passwordHash:'2babf6f47264c5174bff876d53ba25126465ecc94882918b528c35bf68722691',
-      role:'teacher', name:'박지영' }
-  ];
+  var SUPABASE_URL = 'https://mzojtbttgfqypcjgmicl.supabase.co';
+  var SUPABASE_ANON_KEY = 'sb_publishable_UWv35L-CQOxYWaNCJZjPsQ_9f4HEj6e';
+  var supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  async function sha256Hex(text){
-    var enc = new TextEncoder().encode(text);
-    var buf = await crypto.subtle.digest('SHA-256', enc);
-    return Array.from(new Uint8Array(buf)).map(function(b){ return b.toString(16).padStart(2,'0'); }).join('');
-  }
+  var TEACHER_INVITE_HINT = '학교 관리자에게 받은 교사 초대 코드를 입력해주세요.';
 
-  // 로그인한 뒤에는 세션(프로필 정보)만 저장하고, 비밀번호/해시는 절대 저장하지 않는다.
+  /* =========================================================
+     계정 / 인증 (Supabase Auth)
+     ---------------------------------------------------------
+     비밀번호는 Supabase Auth 서버에서 안전하게 해시/검증하므로
+     클라이언트는 평문 비밀번호를 그 자리에서 전송하기만 하면 된다
+     (HTTPS로 암호화되어 전송되고, 우리 코드나 데이터베이스 어디에도
+     평문으로 남지 않는다). 로그인 세션도 supabaseClient가 브라우저에
+     안전하게 보관/갱신해준다.
+
+     회원가입 시 역할(role)은 항상 'student'로만 저장되도록 서버(RLS)에서
+     강제되며, '교사' 초대 코드를 아는 사람만 claim_teacher_role() 함수를
+     통해 교사 권한을 받을 수 있다 (supabase_schema.sql 참고).
+     ========================================================= */
   var currentUser = null;
   var currentRole = 'student';
-  try{
-    var savedSession = JSON.parse(localStorage.getItem('schoolHelper.session') || 'null');
-    if(savedSession && savedSession.username){ currentUser = savedSession; currentRole = savedSession.role; }
-  }catch(e){}
+
+  // 회원가입 직후 이메일 인증이 필요한 경우, 인증 완료 후 첫 로그인 때
+  // profiles 행을 만들 수 있도록 이름/역할/학년반/교사코드를 임시로 남겨둔다.
+  function stashPendingProfile(email, hint){
+    try{ localStorage.setItem('schoolHelper.pendingProfile.'+email, JSON.stringify(hint)); }catch(e){}
+  }
+  function popPendingProfile(email){
+    var key = 'schoolHelper.pendingProfile.'+email;
+    var hint = null;
+    try{ hint = JSON.parse(localStorage.getItem(key) || 'null'); }catch(e){}
+    try{ localStorage.removeItem(key); }catch(e){}
+    return hint;
+  }
+
+  // 세션은 있는데 profiles 행이 아직 없으면(첫 로그인) 새로 만든다.
+  // hint가 없으면 이메일 가입 시 남겨둔 값을 대신 사용한다.
+  async function ensureProfileForSession(session, hint){
+    var userId = session.user.id;
+    var email = session.user.email;
+
+    var sel = await supabaseClient.from('profiles').select('*').eq('id', userId).maybeSingle();
+    if(sel.error) throw sel.error;
+    if(sel.data) return { profile: sel.data, teacherError: null };
+
+    var h = hint || popPendingProfile(email) || {};
+    var wantsTeacher = h.role === 'teacher';
+    var name = (h.name || email.split('@')[0] || '사용자').slice(0,30);
+
+    var ins = await supabaseClient.from('profiles').insert({
+      id: userId, name: name, role: 'student',
+      grade: wantsTeacher ? null : (h.grade || 1),
+      cls: wantsTeacher ? null : (h.cls || 1)
+    }).select().single();
+    if(ins.error) throw ins.error;
+
+    var profile = ins.data;
+    var teacherError = null;
+    if(wantsTeacher && h.teacherCode){
+      var rpc = await supabaseClient.rpc('claim_teacher_role', { invite_code: h.teacherCode });
+      if(rpc.error){ teacherError = rpc.error.message; }
+      else { profile.role = 'teacher'; profile.grade = null; profile.cls = null; }
+    }
+    popPendingProfile(email);
+    return { profile: profile, teacherError: teacherError };
+  }
+
+  function applyLoggedInProfile(session, profile){
+    currentUser = { id: session.user.id, email: session.user.email,
+      role: profile.role, name: profile.name, grade: profile.grade, cls: profile.cls };
+    currentRole = profile.role;
+    // 학생 계정이면 본인 학년/반으로 시간표·수행평가 화면 기본값을 맞춰준다.
+    if(currentUser.role === 'student' && currentUser.grade && currentUser.cls){
+      ttState.grade = currentUser.grade; ttState.cls = currentUser.cls; saveTTState();
+    }
+  }
+
+  async function finishLogin(session, result){
+    applyLoggedInProfile(session, result.profile);
+    document.getElementById('loginEmail').value = '';
+    document.getElementById('loginPw').value = '';
+    showAuthForm('login');
+    await ensureFavorites();
+    updateAuthUI();
+    refreshNavs();
+    goTo('home');
+    if(result.teacherError){
+      alert('교사 초대 코드가 올바르지 않아 학생 계정으로 가입되었습니다. 학교 관리자에게 문의해주세요.');
+    }
+  }
+
+  function showAuthForm(which){
+    document.getElementById('loginForm').style.display = which === 'login' ? 'flex' : 'none';
+    document.getElementById('signupForm').style.display = which === 'signup' ? 'flex' : 'none';
+    document.getElementById('loginError').style.color = '';
+    document.getElementById('loginError').textContent = '';
+    document.getElementById('signupError').textContent = '';
+  }
+
+  function onSignupRoleChange(){
+    var role = document.getElementById('signupRole').value;
+    document.getElementById('signupStudentFields').style.display = role === 'student' ? 'flex' : 'none';
+    document.getElementById('signupTeacherFields').style.display = role === 'teacher' ? 'block' : 'none';
+  }
+
+  async function attemptSignup(){
+    var name = document.getElementById('signupName').value.trim();
+    var email = document.getElementById('signupEmail').value.trim();
+    var pw = document.getElementById('signupPw').value;
+    var role = document.getElementById('signupRole').value;
+    var grade = parseInt(document.getElementById('signupGrade').value, 10);
+    var cls = parseInt(document.getElementById('signupCls').value, 10);
+    var teacherCode = document.getElementById('signupTeacherCode').value.trim();
+    var errEl = document.getElementById('signupError');
+    var btn = document.getElementById('signupSubmitBtn');
+    errEl.style.color = ''; errEl.textContent = '';
+
+    if(!name){ errEl.textContent = '이름을 입력해주세요.'; return; }
+    if(!email){ errEl.textContent = '이메일을 입력해주세요.'; return; }
+    if(!pw || pw.length < 6){ errEl.textContent = '비밀번호는 6자 이상이어야 합니다.'; return; }
+    if(role === 'teacher' && !teacherCode){ errEl.textContent = '교사 초대 코드를 입력해주세요.'; return; }
+
+    var hint = { name:name, role:role, grade:grade, cls:cls, teacherCode:teacherCode };
+    stashPendingProfile(email, hint);
+
+    btn.disabled = true; btn.textContent = '처리 중...';
+    var res = await supabaseClient.auth.signUp({ email:email, password:pw });
+    btn.disabled = false; btn.textContent = '회원가입';
+
+    if(res.error){ errEl.textContent = res.error.message; return; }
+
+    if(res.data.session){
+      try{
+        var result = await ensureProfileForSession(res.data.session, hint);
+        await finishLogin(res.data.session, result);
+      }catch(e){
+        errEl.textContent = '가입은 되었지만 프로필 생성에 실패했습니다: '+e.message;
+      }
+    } else {
+      errEl.style.color = 'var(--pine-deep)';
+      errEl.textContent = '가입 확인 이메일을 보냈습니다. 메일함에서 확인 링크를 누른 뒤 로그인해주세요.';
+      showAuthForm('login');
+    }
+  }
 
   function getMenuItems(){
     var items = BASE_MENU.slice();
@@ -1213,46 +1366,37 @@
   }
 
   async function attemptLogin(){
-    var idVal = document.getElementById('loginId').value.trim();
-    var pwVal = document.getElementById('loginPw').value;
+    var email = document.getElementById('loginEmail').value.trim();
+    var pw = document.getElementById('loginPw').value;
     var errEl = document.getElementById('loginError');
     var btn = document.getElementById('loginSubmitBtn');
-    errEl.textContent = '';
-    if(!idVal || !pwVal){ errEl.textContent = '아이디와 비밀번호를 입력해주세요.'; return; }
-
-    var user = USERS.find(function(u){ return u.username === idVal; });
-    // 아이디가 없어도 동일한 오류 문구만 보여줘 계정 존재 여부가 노출되지 않도록 한다.
-    if(!user){ errEl.textContent = '아이디 또는 비밀번호가 올바르지 않습니다.'; return; }
+    errEl.style.color = ''; errEl.textContent = '';
+    if(!email || !pw){ errEl.textContent = '이메일과 비밀번호를 입력해주세요.'; return; }
 
     btn.disabled = true; btn.textContent = '확인 중...';
-    var hash = await sha256Hex(user.salt + ':' + pwVal);
+    var res = await supabaseClient.auth.signInWithPassword({ email:email, password:pw });
     btn.disabled = false; btn.textContent = '로그인';
 
-    if(hash !== user.passwordHash){
-      errEl.textContent = '아이디 또는 비밀번호가 올바르지 않습니다.';
+    if(res.error){
+      errEl.textContent = (res.error.message === 'Email not confirmed')
+        ? '이메일 인증이 아직 완료되지 않았습니다. 메일함을 확인해주세요.'
+        : '이메일 또는 비밀번호가 올바르지 않습니다.';
       return;
     }
 
-    currentUser = { username:user.username, role:user.role, name:user.name, grade:user.grade, cls:user.cls };
-    currentRole = user.role;
-    try{ localStorage.setItem('schoolHelper.session', JSON.stringify(currentUser)); }catch(e){}
-
-    // 학생 계정이면 본인 학년/반으로 시간표·수행평가 화면 기본값을 맞춰준다.
-    if(currentUser.role === 'student' && currentUser.grade && currentUser.cls){
-      ttState.grade = currentUser.grade; ttState.cls = currentUser.cls; saveTTState();
+    try{
+      var result = await ensureProfileForSession(res.data.session, null);
+      await finishLogin(res.data.session, result);
+    }catch(e){
+      errEl.textContent = '로그인은 되었지만 프로필을 불러오지 못했습니다: '+e.message;
     }
-
-    document.getElementById('loginId').value = '';
-    document.getElementById('loginPw').value = '';
-    updateAuthUI();
-    refreshNavs();
-    goTo('home');
   }
 
-  function logoutUser(){
+  async function logoutUser(){
+    await supabaseClient.auth.signOut();
     currentUser = null;
     currentRole = 'student';
-    try{ localStorage.removeItem('schoolHelper.session'); }catch(e){}
+    FAVORITES = [];
     updateAuthUI();
     refreshNavs();
     goTo('login');
@@ -1419,21 +1563,38 @@
   /* =========================================================
      즐겨찾기 (공지사항 / 수행평가 / FAQ)
      ---------------------------------------------------------
-     "type:id" 형태의 키만 저장해두고, 실제 데이터는 그때그때
-     NOTICE_DATA/EXAM_DATA/FAQ_DATA에서 id로 찾아온다.
+     Supabase의 favorites 테이블에 로그인한 사용자 기준으로 저장된다.
+     화면에서는 지금까지처럼 "type:id" 형태의 문자열 배열(FAVORITES)로
+     다루고, 실제 데이터는 그때그때 NOTICE_DATA/EXAM_DATA/FAQ_DATA에서
+     id로 찾아온다.
      ========================================================= */
   var FAVORITES = [];
-  try{ FAVORITES = JSON.parse(localStorage.getItem('schoolHelper.favorites') || '[]'); }catch(e){}
 
   function favKey(type, id){ return type+':'+id; }
   function isFavorite(type, id){ return FAVORITES.indexOf(favKey(type, id)) !== -1; }
-  function saveFavorites(){ try{ localStorage.setItem('schoolHelper.favorites', JSON.stringify(FAVORITES)); }catch(e){} }
 
-  function toggleFavorite(type, id){
+  async function ensureFavorites(){
+    FAVORITES = [];
+    if(!currentUser) return;
+    var res = await supabaseClient.from('favorites').select('item_type,item_id').eq('user_id', currentUser.id);
+    if(res.error){ console.error('즐겨찾기 조회 실패', res.error); return; }
+    FAVORITES = res.data.map(function(row){ return favKey(row.item_type, row.item_id); });
+  }
+
+  async function toggleFavorite(type, id){
+    if(!currentUser) return;
     var k = favKey(type, id);
     var idx = FAVORITES.indexOf(k);
-    if(idx === -1){ FAVORITES.push(k); } else { FAVORITES.splice(idx, 1); }
-    saveFavorites();
+    if(idx === -1){
+      var ins = await supabaseClient.from('favorites').insert({ user_id:currentUser.id, item_type:type, item_id:id });
+      if(ins.error){ alert('즐겨찾기 추가에 실패했습니다: '+ins.error.message); return; }
+      FAVORITES.push(k);
+    } else {
+      var del = await supabaseClient.from('favorites').delete()
+        .eq('user_id', currentUser.id).eq('item_type', type).eq('item_id', id);
+      if(del.error){ alert('즐겨찾기 해제에 실패했습니다: '+del.error.message); return; }
+      FAVORITES.splice(idx, 1);
+    }
     if(type === 'notice' && document.getElementById('noticeList')) renderNoticeList();
     if(type === 'exam' && document.getElementById('examList')) renderExamList();
     if(type === 'faq' && document.getElementById('faqBrowseList')) renderFaqBrowseList();
@@ -1447,6 +1608,7 @@
   }
 
   function renderFaqBrowseList(){
+    ensureFaqs();
     var el = document.getElementById('faqBrowseList');
     if(!el) return;
     if(!FAQ_DATA.length){
@@ -1459,13 +1621,14 @@
       html += '<div class="faq-browse-item">';
       html += '<button class="fav-star'+(fav?' active':'')+'" onclick="toggleFavorite(\'faq\',\''+f.id+'\')" aria-label="'+(fav?'즐겨찾기 해제':'즐겨찾기 추가')+'">'+(fav?'★':'☆')+'</button>';
       html += '<button class="faq-browse-main" onclick="sendFaqQuestion(\''+f.id+'\')">';
-      html += '<div class="faq-browse-q">'+escapeHtml(f.question)+'</div><div class="faq-browse-cat">'+f.category+' · 최종 업데이트 '+f.lastModified+'</div>';
+      html += '<div class="faq-browse-q">'+escapeHtml(f.question)+'</div><div class="faq-browse-cat">'+f.category+' · 최종 업데이트 '+f.last_modified+'</div>';
       html += '</button></div>';
     });
     el.innerHTML = html;
   }
 
   function renderMyPage(){
+    ensureNotices(); ensureExams(); ensureFaqs();
     var el = document.getElementById('myPageBody');
     var favNotices = FAVORITES.filter(function(k){ return k.indexOf('notice:')===0; })
       .map(function(k){ return NOTICE_DATA.find(function(n){ return n.id===k.split(':')[1]; }); }).filter(Boolean);
@@ -1546,39 +1709,25 @@
   /* =========================================================
      수행평가 데이터 구조
      ---------------------------------------------------------
-     grade/cls 로 필터링. 실제로는 서버 API로 대체 가능.
+     Supabase의 exams 테이블에서 불러온다. grade/cls 필드는 DB에서도
+     그대로 쓰이고, id는 uuid 문자열이다. 관리자 CRUD는 saveAdminExam/
+     deleteAdminExam에서 supabase insert/update/delete로 처리한다.
      EXAM_DATA: { id, grade, cls, subject, title, description,
                   due:'YYYY-MM-DD', method }
      ========================================================= */
-  var EXAM_DATA = [
-    { id:'x1', grade:1, cls:1, subject:'수학', category:'수학', title:'함수 활용 보고서',
-      description:'이차함수 그래프를 활용해 실생활 문제를 분석하는 보고서를 작성한다.',
-      due:'2026-09-25', method:'학교 LMS 제출' },
-    { id:'x2', grade:1, cls:1, subject:'국어', category:'국어', title:'독서 감상문',
-      description:'자유 도서 1권을 읽고 A4 2매 분량의 감상문을 작성한다.',
-      due:'2026-09-20', method:'담당 선생님께 종이 제출' },
-    { id:'x3', grade:1, cls:1, subject:'영어', category:'영어', title:'스피킹 테스트',
-      description:'지정된 주제로 1분간 영어 스피치를 진행한다.',
-      due:'2026-09-10', method:'수업 시간 개별 발표' },
-    { id:'x4', grade:1, cls:2, subject:'과학', category:'과학', title:'실험 보고서',
-      description:'화학 반응 실험 결과를 정리한 보고서를 제출한다.',
-      due:'2026-09-28', method:'이메일 제출' },
-    { id:'x5', grade:2, cls:1, subject:'화학', category:'과학', title:'주기율표 탐구 보고서',
-      description:'원소 주기율표의 규칙성을 탐구하여 보고서로 정리한다.',
-      due:'2026-09-22', method:'학교 LMS 제출' },
-    { id:'x6', grade:2, cls:1, subject:'한국사', category:'사회', title:'근현대사 인물 조사',
-      description:'근현대사 인물 1인을 선정해 조사 발표 자료를 제작한다.',
-      due:'2026-10-02', method:'PPT 파일 제출' },
-    { id:'x7', grade:3, cls:1, subject:'사회탐구', category:'사회', title:'사회문제 분석 보고서',
-      description:'최근 사회 이슈 하나를 선정해 원인과 해결 방안을 분석한다.',
-      due:'2026-09-19', method:'학교 LMS 제출' },
-    { id:'x8', grade:1, cls:1, subject:'정보', category:'정보', title:'알고리즘 순서도 과제',
-      description:'간단한 문제 해결 과정을 순서도로 표현하여 제출한다.',
-      due:'2026-09-27', method:'학교 LMS 제출' },
-    { id:'x9', grade:1, cls:1, subject:'음악', category:'기타', title:'가창 수행평가',
-      description:'지정곡 중 1곡을 선택해 실기 평가를 진행한다.',
-      due:'2026-09-16', method:'수업 시간 개별 평가' }
-  ];
+  var EXAM_DATA = [];
+  var examsLoaded = false;
+
+  async function ensureExams(){
+    if(examsLoaded) return;
+    examsLoaded = true;
+    var res = await supabaseClient.from('exams').select('*').order('due', { ascending:true });
+    if(res.error){ console.error('수행평가 조회 실패', res.error); examsLoaded = false; return; }
+    EXAM_DATA = res.data;
+    if(isViewActive('exam')) renderExamList();
+    if(isViewActive('home')) renderHomeTodayWidget();
+    if(isViewActive('admin') && (adminActiveTab === 'exam' || adminActiveTab === 'dashboard')) renderAdminPanel();
+  }
 
   function dDayInfo(dueStr){
     var today = new Date(); today.setHours(0,0,0,0);
@@ -1635,6 +1784,7 @@
   }
 
   function renderExamList(){
+    ensureExams();
     document.getElementById('examGradeSelect').value = ttState.grade;
     document.getElementById('examClassSelect').value = ttState.cls;
     document.getElementById('examSortSelect').value = examUIState.sort;
@@ -1692,28 +1842,26 @@
   /* =========================================================
      공지사항 데이터 구조
      ---------------------------------------------------------
+     Supabase의 notices 테이블에서 불러온다.
      NOTICE_DATA: { id, title, author, date:'YYYY-MM-DD', views,
-                    priority: '일반' | '중요' | '긴급', content }
+                    priority: '일반' | '중요' | '긴급', content, updated_at }
      중요도는 교사만 관리자 페이지에서 지정할 수 있다 (학생은 읽기 전용).
      '긴급'이 남발되지 않도록 이 값을 바꿀 수 있는 화면 자체가 교사 전용이다.
      ========================================================= */
   var NOTICE_PRIORITIES = ['일반', '중요', '긴급'];
-  var NOTICE_DATA = [
-    { id:'n1', title:'2학기 중간고사 시간표 안내', author:'교무부', date:'2026-09-12', views:342, priority:'중요',
-      content:'2학기 중간고사가 9월 18일(금)부터 실시됩니다.\n\n일자별 시험 과목과 시간은 학교 일정 페이지에서 확인할 수 있습니다.\n시험 당일 준비물: 신분증, 필기구, 수정테이프\n\n결시 시 담임 선생님께 사전에 연락 바랍니다.' },
-    { id:'n2', title:'교복 채촌 실시 안내', author:'학생지원부', date:'2026-09-04', views:198, priority:'일반',
-      content:'2027학년도 신입생 및 재학생 교복 채촌을 아래와 같이 실시합니다.\n\n일시: 9월 5일(금) 점심시간\n장소: 1층 로비\n\n희망 학생은 담임 선생님께 신청서를 제출하세요.' },
-    { id:'n3', title:'체육대회 우천 시 일정 변경 안내', author:'체육부', date:'2026-09-20', views:256, priority:'긴급',
-      content:'9월 25일(금)로 예정된 체육대회는 우천 시 다음 주 월요일로 순연됩니다.\n\n변경 여부는 당일 오전 7시 학교 알림톡으로 안내됩니다.' },
-    { id:'n4', title:'도서관 좌석 예약 시스템 오픈', author:'도서관', date:'2026-09-08', views:121, priority:'일반',
-      content:'학교 도서관 열람실 좌석 예약 시스템이 오픈되었습니다.\n\nAI 학교 도우미에서 "도서관 좌석 예약"이라고 검색하면 바로 이동할 수 있습니다.' },
-    { id:'n5', title:'2학기 동아리 활동 계획서 제출 안내', author:'동아리 담당', date:'2026-09-01', views:87, priority:'일반',
-      content:'2학기 동아리 활동 계획서를 9월 10일까지 담당 선생님께 제출해 주세요.\n\n양식은 공지사항 첨부파일 또는 교무실에서 받을 수 있습니다.' },
-    { id:'n6', title:'교내 정보보안 교육 실시', author:'정보부', date:'2026-08-28', views:64, priority:'일반',
-      content:'전교생 대상 정보보안 및 개인정보보호 교육이 9월 3일 6교시 창체 시간에 진행됩니다.\n\n장소: 각 교실 (화상 시청)' }
-  ];
-  // 시드 데이터의 최초 출처/최종 업데이트일 기록 (관리자 저장 시 updatedAt은 자동 갱신됨)
-  NOTICE_DATA.forEach(function(n){ n.source = '학교 관리자 등록'; n.updatedAt = n.date; });
+  var NOTICE_DATA = [];
+  var noticesLoaded = false;
+
+  async function ensureNotices(){
+    if(noticesLoaded) return;
+    noticesLoaded = true;
+    var res = await supabaseClient.from('notices').select('*').order('date', { ascending:false });
+    if(res.error){ console.error('공지사항 조회 실패', res.error); noticesLoaded = false; return; }
+    NOTICE_DATA = res.data;
+    if(isViewActive('notice')) renderNoticeList();
+    if(isViewActive('home')) renderHomeTodayWidget();
+    if(isViewActive('admin') && (adminActiveTab === 'notice' || adminActiveTab === 'dashboard')) renderAdminPanel();
+  }
 
   var noticeUIState = { search:'', selected:null };
 
@@ -1729,6 +1877,7 @@
   }
 
   function renderNoticeList(){
+    ensureNotices();
     var list = NOTICE_DATA.slice();
     if(noticeUIState.search){
       var kw = noticeUIState.search.toLowerCase();
@@ -1777,7 +1926,7 @@
     var html = '<h3 class="notice-detail-title">'+priorityIcon+escapeHtml(n.title)+'</h3>';
     html += '<div class="notice-detail-meta"><span>'+escapeHtml(n.author)+'</span><span>'+dateLabel+'</span><span>조회 '+n.views+'</span></div>';
     html += '<div class="notice-detail-body">'+escapeHtml(n.content)+'</div>';
-    html += sourceNoteHtml(n.updatedAt);
+    html += sourceNoteHtml(n.updated_at ? n.updated_at.slice(0,10) : null);
     detail.innerHTML = html;
     detail.scrollIntoView({behavior:'smooth', block:'nearest'});
   }
@@ -1785,58 +1934,41 @@
   /* =========================================================
      FAQ 데이터 구조 (AI 학교 도우미가 검색에 사용)
      ---------------------------------------------------------
+     Supabase의 faqs 테이블에서 불러온다.
      FAQ_CATEGORIES: 고정된 9개 분류
      FAQ_DATA: {
        id, question, answer,
-       category   : FAQ_CATEGORIES 중 하나,
-       keywords   : ['조퇴','귀가','출결', ...]  // 검색용 키워드 배열
-       lastModified: 'YYYY-MM-DD'               // 저장할 때 자동 갱신
+       category    : FAQ_CATEGORIES 중 하나,
+       keywords    : ['조퇴','귀가','출결', ...]  // 검색용 키워드 배열 (DB에는 text[]로 저장)
+       last_modified: 'YYYY-MM-DD'               // 저장할 때 자동 갱신
      }
      교사 관리자 페이지에서 CRUD 하며, AI 도우미는 question/answer/keywords를
      대상으로 검색해 가장 적절한 답변을 안내하는 데 사용한다.
      ========================================================= */
   var FAQ_CATEGORIES = ['출결','교칙','시설','동아리','급식','시험','수행평가','학교 행사','기타'];
 
-  var FAQ_DATA = [
-    { id:'f1', question:'조퇴하려면 어떻게 해야 하나요?',
-      answer:'학교의 출결 규정에 따라 담임 선생님께 먼저 확인한 후 필요한 절차를 진행해야 합니다.',
-      category:'출결', keywords:['조퇴','귀가','출결','일찍','먼저 가','집에 가','아파서','조퇴 절차'], lastModified:'2026-09-01' },
-    { id:'f2', question:'분실물은 어디서 찾나요?',
-      answer:'이 서비스에서는 분실물 안내를 제공하지 않습니다. 학생지원부에 직접 문의해 주세요.',
-      category:'기타', keywords:['분실물','습득물'], lastModified:'2026-09-01' },
-    { id:'f3', question:'급식 알레르기 정보는 어디서 확인하나요?',
-      answer:'급식 페이지에서 날짜별 메뉴와 알레르기 유발 식품 번호를 확인할 수 있습니다.',
-      category:'급식', keywords:['알레르기','급식','식단'], lastModified:'2026-09-01' },
-    { id:'f4', question:'수행평가 제출 기한을 놓치면 어떻게 하나요?',
-      answer:'담당 과목 선생님께 개별적으로 문의해 주세요. 사유에 따라 재제출 여부가 달라질 수 있습니다.',
-      category:'수행평가', keywords:['수행평가','제출','기한','마감'], lastModified:'2026-09-01' },
-    { id:'f5', question:'교복 자율화 규정이 있나요?',
-      answer:'하복·동복 착용 기간 외에는 생활복 착용이 가능하며, 자세한 규정은 학생생활규정집을 참고하세요.',
-      category:'교칙', keywords:['교복','생활복','복장'], lastModified:'2026-09-01' },
-    { id:'f6', question:'도서관은 몇 시까지 이용할 수 있나요?',
-      answer:'평일 기준 오전 8시부터 오후 6시까지 이용 가능하며, 방학 중에는 운영 시간이 변경될 수 있습니다.',
-      category:'시설', keywords:['도서관','열람실','이용시간'], lastModified:'2026-09-01' },
-    { id:'f7', question:'동아리는 언제 새로 가입할 수 있나요?',
-      answer:'매 학기 초 2주간 동아리 가입 신청 기간이 운영되며, 담당 선생님께 신청서를 제출하면 됩니다.',
-      category:'동아리', keywords:['동아리','가입','신청'], lastModified:'2026-09-01' },
-    { id:'f8', question:'시험 기간에 도서관 좌석을 예약할 수 있나요?',
-      answer:'네, AI 학교 도우미에서 "도서관 좌석 예약"이라고 검색하면 예약 페이지로 바로 이동할 수 있습니다.',
-      category:'시험', keywords:['시험','도서관','좌석예약'], lastModified:'2026-09-01' },
-    { id:'f9', question:'체육대회는 언제 열리나요?',
-      answer:'체육대회 일정은 학교 일정 페이지에서 확인할 수 있으며, 우천 시 일정이 변경될 수 있습니다.',
-      category:'학교 행사', keywords:['체육대회','행사','일정'], lastModified:'2026-09-01' }
-  ];
-  FAQ_DATA.forEach(function(f){ f.source = '학교 관리자 등록'; });
+  var FAQ_DATA = [];
+  var faqsLoaded = false;
+
+  async function ensureFaqs(){
+    if(faqsLoaded) return;
+    faqsLoaded = true;
+    var res = await supabaseClient.from('faqs').select('*').order('last_modified', { ascending:false });
+    if(res.error){ console.error('FAQ 조회 실패', res.error); faqsLoaded = false; return; }
+    FAQ_DATA = res.data;
+    if(isViewActive('ai')) renderFaqBrowseList();
+    if(isViewActive('admin') && (adminActiveTab === 'faq' || adminActiveTab === 'dashboard')) renderAdminPanel();
+  }
 
   function escapeAttr(s){ return String(s == null ? '' : s).replace(/"/g,'&quot;'); }
 
   /* =========================================================
      데이터 출처 / 최종 업데이트 표시
      ---------------------------------------------------------
-     급식·시간표·학교 일정·공지사항·FAQ는 모두 교사가 관리자 페이지에서
-     직접 입력/수정하는 정보이므로 출처는 공통으로 '학교 관리자 등록'을
-     쓰고, 각 데이터가 마지막으로 저장된 날짜(updatedAt/lastModified)를
-     함께 기록해 화면과 AI 답변에 표시한다.
+     급식·학교 일정·시간표는 나이스(NEIS) 오픈API에서, 공지사항·FAQ는
+     Supabase에 교사가 직접 입력한 내용에서 온다. label을 넘기지 않으면
+     기본값 '학교 관리자 등록'을 쓰고, 각 데이터가 마지막으로 저장된
+     날짜를 함께 기록해 화면과 AI 답변에 표시한다.
      ========================================================= */
   var SOURCE_LABEL = '학교 관리자 등록';
   function sourceNoteHtml(updatedAt, label){
@@ -1921,6 +2053,7 @@
 
   function adminDashboardHTML(){
     ensureScheduleYear(new Date().getFullYear());
+    ensureNotices(); ensureExams(); ensureFaqs();
     var todayStr = todayDateStr();
     var upcomingEvents = SCHOOL_EVENTS.filter(function(e){ return e.date >= todayStr; })
       .sort(function(a,b){ return a.date < b.date ? -1 : 1; });
@@ -1994,6 +2127,7 @@
 
   /* ---- 공지사항 관리 ---- */
   function adminNoticeHTML(){
+    ensureNotices();
     var item = adminEditId.notice ? NOTICE_DATA.find(function(n){ return n.id === adminEditId.notice; }) : null;
     var html = '<div class="admin-form"><h4>'+(item ? '공지 수정' : '새 공지 작성')+'</h4>';
     html += '<div class="form-row"><label>제목</label><input id="adm_notice_title" maxlength="100" value="'+escapeAttr(item ? item.title : '')+'"></div>';
@@ -2018,13 +2152,15 @@
     return html;
   }
   function editAdminNotice(id){ adminEditId.notice = id; renderAdminPanel(); }
-  function deleteAdminNotice(id){
+  async function deleteAdminNotice(id){
     if(!requireTeacher()) return;
     if(!confirm('이 공지를 삭제할까요?')) return;
+    var res = await supabaseClient.from('notices').delete().eq('id', id);
+    if(res.error){ alert('삭제에 실패했습니다: '+res.error.message); return; }
     NOTICE_DATA = NOTICE_DATA.filter(function(n){ return n.id !== id; });
     renderAdminPanel();
   }
-  function saveAdminNotice(){
+  async function saveAdminNotice(){
     if(!requireTeacher()) return;
     var title = document.getElementById('adm_notice_title').value.trim();
     var author = document.getElementById('adm_notice_author').value.trim() || '교무부';
@@ -2039,13 +2175,17 @@
     if(!err && NOTICE_PRIORITIES.indexOf(priority) === -1){ err = '중요도 값이 올바르지 않습니다.'; }
     if(err){ alert(err); return; }
 
+    var payload = { title:title, author:author, date:date, priority:priority, content:content, updated_at:new Date().toISOString() };
+
     if(adminEditId.notice){
+      var res = await supabaseClient.from('notices').update(payload).eq('id', adminEditId.notice).select().single();
+      if(res.error){ alert('저장에 실패했습니다: '+res.error.message); return; }
       var n = NOTICE_DATA.find(function(x){ return x.id === adminEditId.notice; });
-      n.title=title; n.author=author; n.date=date; n.priority=priority; n.content=content;
-      n.updatedAt = todayDateStr(); n.source = '학교 관리자 등록';
+      Object.assign(n, res.data);
     } else {
-      NOTICE_DATA.push({ id:'n'+Date.now(), title:title, author:author, date:date, views:0, priority:priority, content:content,
-        updatedAt: todayDateStr(), source:'학교 관리자 등록' });
+      var ins = await supabaseClient.from('notices').insert(Object.assign({views:0}, payload)).select().single();
+      if(ins.error){ alert('저장에 실패했습니다: '+ins.error.message); return; }
+      NOTICE_DATA.push(ins.data);
     }
     adminEditId.notice = null;
     renderAdminPanel();
@@ -2114,6 +2254,7 @@
 
   /* ---- 수행평가 관리 ---- */
   function adminExamHTML(){
+    ensureExams();
     var item = adminEditId.exam ? EXAM_DATA.find(function(x){ return x.id === adminEditId.exam; }) : null;
     var html = '<div class="admin-form"><h4>'+(item ? '수행평가 수정' : '새 수행평가 추가')+'</h4>';
     html += '<div class="form-row inline"><div><label>학년</label><select id="adm_exam_grade">';
@@ -2143,13 +2284,15 @@
     return html;
   }
   function editAdminExam(id){ adminEditId.exam = id; renderAdminPanel(); }
-  function deleteAdminExam(id){
+  async function deleteAdminExam(id){
     if(!requireTeacher()) return;
     if(!confirm('이 수행평가를 삭제할까요?')) return;
+    var res = await supabaseClient.from('exams').delete().eq('id', id);
+    if(res.error){ alert('삭제에 실패했습니다: '+res.error.message); return; }
     EXAM_DATA = EXAM_DATA.filter(function(x){ return x.id !== id; });
     renderAdminPanel();
   }
-  function saveAdminExam(){
+  async function saveAdminExam(){
     if(!requireTeacher()) return;
     var grade = parseInt(document.getElementById('adm_exam_grade').value,10);
     var cls = parseInt(document.getElementById('adm_exam_cls').value,10);
@@ -2170,11 +2313,17 @@
     if(!err && EXAM_CATEGORIES.indexOf(category) === -1){ err = '분류 값이 올바르지 않습니다.'; }
     if(err){ alert(err); return; }
 
+    var payload = { grade:grade, cls:cls, subject:subject, category:category, title:title, description:description, due:due, method:method };
+
     if(adminEditId.exam){
+      var res = await supabaseClient.from('exams').update(payload).eq('id', adminEditId.exam).select().single();
+      if(res.error){ alert('저장에 실패했습니다: '+res.error.message); return; }
       var x = EXAM_DATA.find(function(e){ return e.id === adminEditId.exam; });
-      x.grade=grade; x.cls=cls; x.subject=subject; x.category=category; x.title=title; x.description=description; x.due=due; x.method=method;
+      Object.assign(x, res.data);
     } else {
-      EXAM_DATA.push({ id:'x'+Date.now(), grade:grade, cls:cls, subject:subject, category:category, title:title, description:description, due:due, method:method });
+      var ins = await supabaseClient.from('exams').insert(payload).select().single();
+      if(ins.error){ alert('저장에 실패했습니다: '+ins.error.message); return; }
+      EXAM_DATA.push(ins.data);
     }
     adminEditId.exam = null;
     renderAdminPanel();
@@ -2182,6 +2331,7 @@
 
   /* ---- FAQ 관리 ---- */
   function adminFaqHTML(){
+    ensureFaqs();
     var item = adminEditId.faq ? FAQ_DATA.find(function(f){ return f.id === adminEditId.faq; }) : null;
     var html = '<div class="admin-form"><h4>'+(item ? 'FAQ 수정' : '새 FAQ 추가')+'</h4>';
     var prefillQ = item ? item.question : (adminFaqPrefillQuestion || '');
@@ -2216,22 +2366,24 @@
 
     html += '<div class="admin-list">';
     if(!FAQ_DATA.length){ html += '<p class="meal-empty">등록된 FAQ가 없습니다.</p>'; }
-    FAQ_DATA.slice().sort(function(a,b){ return a.lastModified < b.lastModified ? 1 : -1; }).forEach(function(f){
+    FAQ_DATA.slice().sort(function(a,b){ return a.last_modified < b.last_modified ? 1 : -1; }).forEach(function(f){
       var fb = FAQ_FEEDBACK[f.id] || {up:0, down:0};
-      html += '<div class="admin-item-row"><div class="admin-item-main"><div class="aim-title">Q. '+escapeHtml(f.question)+'</div><div class="aim-sub">'+f.category+' · '+escapeHtml(f.keywords.join(', '))+' · 수정일 '+f.lastModified+' · 👍 '+fb.up+' 👎 '+fb.down+'</div></div>';
+      html += '<div class="admin-item-row"><div class="admin-item-main"><div class="aim-title">Q. '+escapeHtml(f.question)+'</div><div class="aim-sub">'+f.category+' · '+escapeHtml(f.keywords.join(', '))+' · 수정일 '+f.last_modified+' · 👍 '+fb.up+' 👎 '+fb.down+'</div></div>';
       html += '<div class="admin-item-actions"><button onclick="editAdminFaq(\''+f.id+'\')">수정</button><button class="danger" onclick="deleteAdminFaq(\''+f.id+'\')">삭제</button></div></div>';
     });
     html += '</div>';
     return html;
   }
   function editAdminFaq(id){ adminEditId.faq = id; renderAdminPanel(); }
-  function deleteAdminFaq(id){
+  async function deleteAdminFaq(id){
     if(!requireTeacher()) return;
     if(!confirm('이 FAQ를 삭제할까요?')) return;
+    var res = await supabaseClient.from('faqs').delete().eq('id', id);
+    if(res.error){ alert('삭제에 실패했습니다: '+res.error.message); return; }
     FAQ_DATA = FAQ_DATA.filter(function(f){ return f.id !== id; });
     renderAdminPanel();
   }
-  function saveAdminFaq(){
+  async function saveAdminFaq(){
     if(!requireTeacher()) return;
     var q = document.getElementById('adm_faq_q').value.trim();
     var cat = document.getElementById('adm_faq_cat').value;
@@ -2244,11 +2396,17 @@
     if(err){ alert(err); return; }
 
     var keywords = kwRaw ? kwRaw.split(',').map(function(k){ return k.trim().slice(0,20); }).filter(Boolean).slice(0,10) : [];
+    var payload = { question:q, answer:a, category:cat, keywords:keywords, last_modified: todayDateStr() };
+
     if(adminEditId.faq){
+      var res = await supabaseClient.from('faqs').update(payload).eq('id', adminEditId.faq).select().single();
+      if(res.error){ alert('저장에 실패했습니다: '+res.error.message); return; }
       var f = FAQ_DATA.find(function(x){ return x.id === adminEditId.faq; });
-      f.question=q; f.answer=a; f.category=cat; f.keywords=keywords; f.lastModified=todayDateStr(); f.source='학교 관리자 등록';
+      Object.assign(f, res.data);
     } else {
-      FAQ_DATA.push({ id:'f'+Date.now(), question:q, answer:a, category:cat, keywords:keywords, lastModified:todayDateStr(), source:'학교 관리자 등록' });
+      var ins = await supabaseClient.from('faqs').insert(payload).select().single();
+      if(ins.error){ alert('저장에 실패했습니다: '+ins.error.message); return; }
+      FAQ_DATA.push(ins.data);
     }
     adminEditId.faq = null;
     renderAdminPanel();
@@ -2625,6 +2783,7 @@
   }
 
   function answerExamQuery(scope){
+    ensureExams();
     var grade = ttState.grade, cls = ttState.cls;
     var list = EXAM_DATA.filter(function(x){ return x.grade === grade && x.cls === cls; });
     if(scope){
@@ -2696,6 +2855,7 @@
   function sendChatMessage(text){
     text = text.trim();
     if(!text) return;
+    ensureFaqs();
     initChatIfNeeded();
     chatMessages.push({ sender:'user', text:text });
     chatMessages.push({ sender:'bot', typing:true });
@@ -2709,7 +2869,7 @@
         chatMessages.push({ sender:'bot', msgId:'m'+(++chatMsgCounter), text: dataAnswer, faqId:null, userQuestion:text });
       } else {
         var faq = findFaqAnswer(text);
-        var faqText = faq ? (faq.answer + sourceNoteText(faq.lastModified)) : NOT_FOUND_MSG;
+        var faqText = faq ? (faq.answer + sourceNoteText(faq.last_modified)) : NOT_FOUND_MSG;
         chatMessages.push({ sender:'bot', msgId:'m'+(++chatMsgCounter),
           text: faqText, faqId: faq ? faq.id : null, userQuestion:text });
       }
@@ -2754,6 +2914,7 @@
     ensureScheduleYear(new Date().getFullYear());
     var searchWeek = getWeekDates(todayDateStr());
     ensureMealRange(searchWeek[0], searchWeek[4]);
+    ensureNotices(); ensureExams(); ensureFaqs();
     var qTokens = qLower.split(/\s+/).filter(Boolean);
 
     function scoreText(text){
@@ -2864,14 +3025,19 @@
     document.getElementById('settingsSaved').textContent = '';
   }
 
-  function saveStudentClassSetting(){
+  async function saveStudentClassSetting(){
     ttState.grade = parseInt(document.getElementById('settingsGrade').value, 10);
     ttState.cls = parseInt(document.getElementById('settingsCls').value, 10);
     saveTTState();
-    // 로그인 세션에도 반영해서 다음에 다시 로그인해도 유지되도록 한다.
+    // profiles 테이블에도 반영해서 다음에 다시 로그인해도(다른 기기에서도) 유지되도록 한다.
     if(currentUser && currentUser.role === 'student'){
       currentUser.grade = ttState.grade; currentUser.cls = ttState.cls;
-      try{ localStorage.setItem('schoolHelper.session', JSON.stringify(currentUser)); }catch(e){}
+      var res = await supabaseClient.from('profiles')
+        .update({ grade: ttState.grade, cls: ttState.cls }).eq('id', currentUser.id);
+      if(res.error){
+        document.getElementById('settingsSaved').textContent = '저장에 실패했습니다: '+res.error.message;
+        return;
+      }
     }
     document.getElementById('settingsSaved').textContent = '저장되었습니다. 홈 화면과 시간표, 수행평가에 바로 반영됩니다.';
     renderHomeTodayWidget();
@@ -2882,6 +3048,7 @@
     var ds = todayDateStr();
     ensureMealRange(ds, ds);
     ensureScheduleYear(new Date().getFullYear());
+    ensureExams(); ensureNotices();
     var changeLink = currentRole === 'student' ? ' <button class="tmc-change-link" onclick="goTo(\'settings\')">변경</button>' : '';
     var classTag = ttState.grade+'학년 '+ttState.cls+'반'+changeLink;
 
@@ -3375,9 +3542,26 @@
     return false;
   }
 
-  // 초기 화면: 로그인 여부에 따라 로그인 페이지 또는 홈으로 진입
-  updateAuthUI();
-  goTo(currentUser ? 'home' : 'login');
+  // 초기 화면: Supabase에 남아있는 로그인 세션이 있으면 복원하고,
+  // 없으면 로그인 페이지로 진입한다.
+  async function initAuth(){
+    var sessionRes = await supabaseClient.auth.getSession();
+    var session = sessionRes.data && sessionRes.data.session;
+    if(session){
+      try{
+        var result = await ensureProfileForSession(session, null);
+        applyLoggedInProfile(session, result.profile);
+        await ensureFavorites();
+      }catch(e){
+        console.error('세션 복원 실패', e);
+        currentUser = null; currentRole = 'student';
+      }
+    }
+    updateAuthUI();
+    refreshNavs();
+    goTo(currentUser ? 'home' : 'login');
+  }
+  initAuth();
 </script>
 </body>
 </html>
