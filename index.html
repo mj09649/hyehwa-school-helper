@@ -1319,10 +1319,10 @@
 
   function getMenuItems(){
     var items = BASE_MENU.slice();
-    if(currentRole === 'student'){
-      items.push({id:'mypage', icon:'⭐', label:'마이페이지'});
-      items.push({id:'settings', icon:'⚙️', label:'내 학년/반 설정'});
-    }
+    // 즐겨찾기/학년·반 설정은 역할과 무관하게 로그인한 모든 사용자에게 보여준다
+    // (교사도 FAQ·공지를 즐겨찾기하거나, 화면 확인용으로 학년/반을 바꿔볼 수 있다).
+    items.push({id:'mypage', icon:'⭐', label:'마이페이지'});
+    items.push({id:'settings', icon:'⚙️', label:'내 학년/반 설정'});
     if(currentRole === 'teacher'){ items.push({id:'admin', icon:'🛠️', label:'관리자 페이지'}); }
     return items;
   }
