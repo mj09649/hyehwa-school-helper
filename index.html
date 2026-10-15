@@ -936,6 +936,9 @@
               <option value="2">2반</option>
               <option value="3">3반</option>
               <option value="4">4반</option>
+              <option value="5">5반</option>
+              <option value="6">6반</option>
+              <option value="7">7반</option>
             </select>
           </div>
 
@@ -959,6 +962,9 @@
               <option value="2">2반</option>
               <option value="3">3반</option>
               <option value="4">4반</option>
+              <option value="5">5반</option>
+              <option value="6">6반</option>
+              <option value="7">7반</option>
             </select>
           </div>
 
@@ -1021,7 +1027,7 @@
                 <option value="1">1학년</option><option value="2">2학년</option><option value="3">3학년</option>
               </select></div>
               <div><label for="settingsCls">반</label><select id="settingsCls">
-                <option value="1">1반</option><option value="2">2반</option><option value="3">3반</option><option value="4">4반</option>
+                <option value="1">1반</option><option value="2">2반</option><option value="3">3반</option><option value="4">4반</option><option value="5">5반</option><option value="6">6반</option><option value="7">7반</option>
               </select></div>
             </div>
             <div class="form-actions">
@@ -1061,7 +1067,7 @@
                 <option value="1">1학년</option><option value="2">2학년</option><option value="3">3학년</option>
               </select></div>
               <div><label for="signupCls">반</label><select id="signupCls">
-                <option value="1">1반</option><option value="2">2반</option><option value="3">3반</option><option value="4">4반</option>
+                <option value="1">1반</option><option value="2">2반</option><option value="3">3반</option><option value="4">4반</option><option value="5">5반</option><option value="6">6반</option><option value="7">7반</option>
               </select></div>
             </div>
             <div id="signupTeacherFields" style="display:none;">
@@ -2260,7 +2266,7 @@
     html += '<div class="form-row inline"><div><label>학년</label><select id="adm_exam_grade">';
     [1,2,3].forEach(function(g){ html += '<option value="'+g+'"'+(item && item.grade===g ? ' selected':'')+'>'+g+'학년</option>'; });
     html += '</select></div><div><label>반</label><select id="adm_exam_cls">';
-    [1,2,3,4].forEach(function(c){ html += '<option value="'+c+'"'+(item && item.cls===c ? ' selected':'')+'>'+c+'반</option>'; });
+    [1,2,3,4,5,6,7].forEach(function(c){ html += '<option value="'+c+'"'+(item && item.cls===c ? ' selected':'')+'>'+c+'반</option>'; });
     html += '</select></div></div>';
     html += '<div class="form-row inline"><div><label>과목</label><input id="adm_exam_subject" value="'+escapeAttr(item ? item.subject : '')+'"></div>';
     html += '<div><label>분류</label><select id="adm_exam_category">';
@@ -2309,7 +2315,7 @@
       || validateTextField(method, '제출 방법', {max:50});
     if(!err && !isValidDateStr(due)){ err = '제출일 형식이 올바르지 않습니다.'; }
     if(!err && (grade < 1 || grade > 3)){ err = '학년 값이 올바르지 않습니다.'; }
-    if(!err && (cls < 1 || cls > 4)){ err = '반 값이 올바르지 않습니다.'; }
+    if(!err && (cls < 1 || cls > 7)){ err = '반 값이 올바르지 않습니다.'; }
     if(!err && EXAM_CATEGORIES.indexOf(category) === -1){ err = '분류 값이 올바르지 않습니다.'; }
     if(err){ alert(err); return; }
 
@@ -2515,7 +2521,7 @@
     html += '<div class="form-row inline"><div><label>학년</label><select id="adm_tt_grade" onchange="onAdminTTSelectChange()">';
     [1,2,3].forEach(function(g){ html += '<option value="'+g+'"'+(adminTTGrade===g?' selected':'')+'>'+g+'학년</option>'; });
     html += '</select></div><div><label>반</label><select id="adm_tt_cls" onchange="onAdminTTSelectChange()">';
-    [1,2,3,4].forEach(function(c){ html += '<option value="'+c+'"'+(adminTTCls===c?' selected':'')+'>'+c+'반</option>'; });
+    [1,2,3,4,5,6,7].forEach(function(c){ html += '<option value="'+c+'"'+(adminTTCls===c?' selected':'')+'>'+c+'반</option>'; });
     html += '</select></div></div>';
     html += '<div class="admin-tt-grid"><table><thead><tr><th></th>';
     DAY_LABELS.forEach(function(l){ html += '<th>'+l+'</th>'; });
